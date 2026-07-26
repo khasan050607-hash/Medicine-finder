@@ -63,6 +63,7 @@ class _LiveCameraScreenState extends State<LiveCameraScreen> {
       final results = await ShelfScanner.scan(
         photoPath: xfile.path,
         references: _referenceEmbeddings,
+        medicineName: widget.medicine.name,
         topN: 3,
       );
 
@@ -211,7 +212,9 @@ class _LiveCameraScreenState extends State<LiveCameraScreen> {
       final top = (match.y / _photoHeight!) * displayH;
       final boxW = (match.width / _photoWidth!) * displayW;
       final boxH = (match.height / _photoHeight!) * displayH;
-      final color = isBest && isGood ? Colors.greenAccent : Colors.orangeAccent;
+      final color = match.matchedByText
+          ? Colors.lightBlueAccent
+          : (isBest && isGood ? Colors.greenAccent : Colors.orangeAccent);
 
       widgets.add(
         Positioned(
@@ -228,7 +231,7 @@ class _LiveCameraScreenState extends State<LiveCameraScreen> {
         ),
       );
 
-      if (isBest) {
+      if (isBest || match.matchedByText) {
         widgets.add(
           Positioned(
             left: left,
@@ -237,7 +240,9 @@ class _LiveCameraScreenState extends State<LiveCameraScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               color: color,
               child: Text(
-                '${((match.score + 1) / 2 * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                match.matchedByText
+                    ? 'নাম মিলেছে ✓'
+                    : '${((match.score + 1) / 2 * 100).clamp(0, 100).toStringAsFixed(0)}%',
                 style: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold),
               ),
             ),
