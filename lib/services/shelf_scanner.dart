@@ -1,27 +1,38 @@
 import 'dart:io';
+import 'dart:ui' show Rect;
 import 'package:image/image.dart' as img;
 import 'embedding_engine.dart';
+import 'text_matcher.dart';
 
-/// A candidate region in the scanned photo, in original-image pixel
-/// coordinates, with how well it matched the target medicine.
 class ScanMatch {
   final int x, y, width, height;
   final double score;
-  ScanMatch({required this.x, required this.y, required this.width, required this.height, required this.score});
+  final bool matchedByText;
+  ScanMatch({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.score,
+    this.matchedByText = false,
+  });
 }
 
-/// Scans one shelf photo for the region that best matches a medicine's
-/// stored reference photos, by sliding a window across the image at a
-/// few sizes and scoring each window independently.
 class ShelfScanner {
   static Future<List<ScanMatch>> scan({
     required String photoPath,
     required List<StoredEmbedding> references,
+    required String medicineName,
     int topN = 3,
   }) async {
     final bytes = await File(photoPath).readAsBytes();
     final image = img.decodeImage(bytes);
     if (image == null || references.isEmpty) return [];
+
+    final textHits = await TextMatcher.findNameMatches(
+      imagePath: photoPath,
+      medicineName: medicineName,
+    );
 
     final candidates = <ScanMatch>[];
     final fractions = [0.25, 0.35, 0.5];
@@ -43,13 +54,48 @@ class ShelfScanner {
             if (score > bestScore) bestScore = score;
           }
 
-          candidates.add(ScanMatch(x: x, y: y, width: winSize, height: winSize, score: bestScore));
+          final windowRect = Rect.fromLTWH(x.toDouble(), y.toDouble(), winSize.toDouble(), winSize.toDouble());
+          final overlapsName = textHits.any((hit) => _overlapFraction(hit.boundingBox, windowRect) > 0.3);
+
+          candidates.add(ScanMatch(
+            x: x,
+            y: y,
+            width: winSize,
+            height: winSize,
+            score: overlapsName ? 1.0 : bestScore,
+            matchedByText: overlapsName,
+          ));
         }
       }
     }
 
+    for (final hit in textHits) {
+      final padX = hit.boundingBox.width * 0.6;
+      final padY = hit.boundingBox.height * 1.5;
+      final left = (hit.boundingBox.left - padX).clamp(0, image.width.toDouble());
+      final top = (hit.boundingBox.top - padY).clamp(0, image.height.toDouble());
+      final right = (hit.boundingBox.right + padX).clamp(0, image.width.toDouble());
+      final bottom = (hit.boundingBox.bottom + padY).clamp(0, image.height.toDouble());
+      candidates.add(ScanMatch(
+        x: left.round(),
+        y: top.round(),
+        width: (right - left).round(),
+        height: (bottom - top).round(),
+        score: 1.0,
+        matchedByText: true,
+      ));
+    }
+
     candidates.sort((a, b) => b.score.compareTo(a.score));
     return _suppressOverlapping(candidates, topN);
+  }
+
+  static double _overlapFraction(Rect hit, Rect window) {
+    final intersection = hit.intersect(window);
+    if (intersection.width <= 0 || intersection.height <= 0) return 0.0;
+    final hitArea = hit.width * hit.height;
+    if (hitArea <= 0) return 0.0;
+    return (intersection.width * intersection.height) / hitArea;
   }
 
   static List<ScanMatch> _suppressOverlapping(List<ScanMatch> sorted, int topN) {
