@@ -17,7 +17,6 @@ dependencies:
   video_thumbnail: ^0.5.3
   video_player: ^2.8.6
   image: ^4.1.7
-  camera: ^0.10.5+9
 
 dev_dependencies:
   flutter_test:
